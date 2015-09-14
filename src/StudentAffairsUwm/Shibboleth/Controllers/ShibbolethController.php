@@ -39,18 +39,6 @@ class ShibbolethController extends Controller
      */
     public function __construct(GenericUser $user = null)
     {
-        if (config('shibboleth.emulate_idp') == true) {
-            $this->config         = new \Shibalike\Config();
-            $this->config->idpUrl = 'idp';
-
-            $stateManager = $this->getStateManager();
-
-            $this->sp = new \Shibalike\SP($stateManager, $this->config);
-            $this->sp->initLazySession();
-
-            $this->idp = new \Shibalike\IdP($stateManager, $this->getAttrStore(), $this->config);
-        }
-
         $this->user = $user;
     }
 
@@ -60,11 +48,7 @@ class ShibbolethController extends Controller
      */
     public function create()
     {
-        if (config('shibboleth.emulate_idp') == true) {
-            return Redirect::to(action($this->ctrpath . 'emulateLogin') . '?target=' . action($this->ctrpath . "idpAuthorize"));
-        } else {
             return Redirect::to('https://' . Request::server('SERVER_NAME') . ':' . Request::server('SERVER_PORT') . config('shibboleth.idp_login') . '?target=' . action($this->ctrpath . "idpAuthorize"));
-        }
     }
 
     /**
@@ -186,13 +170,9 @@ class ShibbolethController extends Controller
                     }
 
                     $group->users()->save($user);
-
-                    // this is simply brings us back to the session-setting branch directly above
-                    if (config('shibboleth.emulate_idp') == true) {
-                        return Redirect::to(action($this->ctrpath . 'emulateLogin') . '?target=' . action($this->ctrpath . "idpAuthorize"));
-                    } else {
-                        return Redirect::to('https://' . Request::server('SERVER_NAME') . ':' . Request::server('SERVER_PORT') . config('shibboleth.idp_login') . '?target=' . action($this->ctrpath . "idpAuthorize"));
-                    }
+                    
+                    return Redirect::to('https://' . Request::server('SERVER_NAME') . ':' . Request::server('SERVER_PORT') . config('shibboleth.idp_login') . '?target=' . action($this->ctrpath . "idpAuthorize"));
+                    
                 } else {
                     // Identify that the user was not in our database and will not be created (despite passing IdP)
                     Session::put('auth_type', 'no_user');
@@ -218,104 +198,10 @@ class ShibbolethController extends Controller
         $token = JWTAuth::invalidate($_GET['token']);
 
         if (Session::get('auth_type') == 'idp') {
-            if (config('shibboleth.emulate_idp') == true) {
-                return Redirect::to(action($this->ctrpath . 'emulateLogout'));
-            } else {
                 return Redirect::to('https://' . Request::server('SERVER_NAME') . config('shibboleth.idp_logout'));
-            }
         } else {
             return $this->viewOrRedirect(config('shibboleth.local_logout'));
         }
-    }
-
-    /**
-     * Emulate a login via Shibalike
-     */
-    public function emulateLogin()
-    {
-        $from = (Input::get('target') != null) ? Input::get('target') : $this->getServerVariable('HTTP_REFERER');
-
-        $this->sp->makeAuthRequest($from);
-        $this->sp->redirect();
-    }
-
-    /**
-     * Emulate a logout via Shibalike
-     */
-    public function emulateLogout()
-    {
-        $this->sp->logout();
-        die('Goodbye, fair user. <a href="' . $this->getServerVariable('HTTP_REFERER') . '">Return from whence you came</a>!');
-    }
-
-    /**
-     * Emulate the 'authorization' via Shibalike
-     */
-    public function emulateIdp()
-    {
-        if (Input::get('username') != null) {
-            $username = '';
-            if (Input::get('username') === Input::get('password')) {
-                $username = Input::get('username');
-            }
-
-            $userAttrs = $this->idp->fetchAttrs($username);
-            if ($userAttrs) {
-                $this->idp->markAsAuthenticated($username);
-                $this->idp->redirect();
-            } else {
-                $error = 'Sorry. You failed to authenticate. <a href="idp" alt="Try Again">Try again</a>';
-            }
-        }
-        ?>
-
-        <html>
-            <head>
-                <title>Emulated IdP Login</title>
-                <style type="text/css">
-                    body {
-                        font-family: sans-serif;
-                    }
-                    .title {
-                        text-align: center;
-                        font-weight: 200;
-                        color: grey;
-                    }
-                    input[type="submit"] {
-                        padding: 10px;
-                        border: 1px solid #cdcdcd;
-                        border-radius: 5px;
-                        background-color: #fff;
-                        min-width: 100%;
-                    }
-                    input[type="submit"]:hover {
-                        background-color: #cdcdcd;
-                        cursor: pointer;
-                    }
-                </style>
-            </head>
-            <body>
-                <div style="margin: 10px auto; width: 100%; border: 1px solid grey; border-radius: 5px; padding: 10px; max-width: 400px; min-width: 300px;">
-                    <h2 class="title">Login to Continue</h2>
-                    <form action="" method="post" style="color: grey;">
-                        <input type="hidden" name="_token" value="<?php echo csrf_token();?>">
-                        <?=(isset($error)) ? ('<p><em>' . $error . '</em></p>') : '';?>
-                        <p>
-                            <label for="username">Username</label>
-                            <input type="text" name="username" id="username" style="width: 100%; padding: 5px; border-radius: 5px; border: 1px solid #cdcdcd;" />
-                        </p>
-                        <p>
-                            <label for="password">Password</label>
-                            <input type="password" name="password" id="password" style="width: 100%; padding: 5px; border-radius: 5px; border: 1px solid #cdcdcd;" />
-                        </p>
-                        <p><input type="submit" value="Login"></p>
-                    </form>
-                </div>
-            </div>
-        </html>
-
-        <?php
-
     }
 
     /**
